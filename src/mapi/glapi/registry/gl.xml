@@ -24667,7 +24667,7 @@ typedef unsigned int GLhandleARB;
             <param len="COMPSIZE(id,type)">const void *<name>addr</name></param>
         </command>
         <command>
-            <proto>void <name>glSetPerfQueryConfigINTEL</name></proto>
+            <proto>void <name>glSetPerfQueryConfigIdINTEL</name></proto>
             <param><ptype>GLuint</ptype> <name>configId</name></param>
         </command>
         <command>

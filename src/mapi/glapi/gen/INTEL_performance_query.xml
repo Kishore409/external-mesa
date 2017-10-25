@@ -68,7 +68,7 @@
     <param name="bytesWritten" type="GLuint *"/>
   </function>
 
-  <function name="SetPerfQueryConfigINTEL" es2="2.0">
+  <function name="SetPerfQueryConfigIdINTEL" es2="2.0">
     <param name="configId" type="GLuint"/>
   </function>
 

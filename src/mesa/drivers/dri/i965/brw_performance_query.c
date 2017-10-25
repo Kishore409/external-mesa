@@ -790,13 +790,13 @@ add_mdapi_deltas(struct brw_context *brw,
       accumulate_uint32(start + 3, end + 3, &bdw->GPUTicks);
 
       idx = 0;
-      for (i = 0; i < ARRAY_SIZE(bdw->OaCntr); i++)
+      for (i = 0; i < GTDI_QUERY_BDW_METRICS_OA_40b_COUNT; i++)
          accumulate_uint40(i, start, end, &bdw->OaCntr[idx++]);
 
-      for (i = 0; i < 4; i++)
+      for (i = 0; i < (GTDI_QUERY_BDW_METRICS_OA_COUNT - GTDI_QUERY_BDW_METRICS_OA_40b_COUNT); i++)
          accumulate_uint32(start + 36 + i, end + 36 + i, &bdw->OaCntr[idx++]);
 
-      for (i = 0; i < 16; i++)
+      for (i = 0; i < ARRAY_SIZE(bdw->NoaCntr); i++)
          accumulate_uint32(start + 48 + i, end + 48 + i, &bdw->NoaCntr[i]);
 
       bdw->ReportsCount++;
@@ -816,13 +816,13 @@ add_mdapi_deltas(struct brw_context *brw,
       accumulate_uint32(start + 3, end + 3, &skl->GPUTicks);
 
       idx = 0;
-      for (i = 0; i < 32; i++)
+      for (i = 0; i < GTDI_QUERY_BDW_METRICS_OA_40b_COUNT; i++)
          accumulate_uint40(i, start, end, &skl->OaCntr[idx++]);
 
-      for (i = 0; i < 4; i++)
+      for (i = 0; i < (GTDI_QUERY_BDW_METRICS_OA_COUNT - GTDI_QUERY_BDW_METRICS_OA_40b_COUNT); i++)
          accumulate_uint32(start + 36 + i, end + 36 + i, &skl->OaCntr[idx++]);
 
-      for (i = 0; i < 16; i++)
+      for (i = 0; i < ARRAY_SIZE(skl->NoaCntr); i++)
          accumulate_uint32(start + 48 + i, end + 48 + i, &skl->NoaCntr[i]);
 
       skl->ReportsCount++;
@@ -2537,8 +2537,8 @@ brw_init_perf_query_info(struct gl_context *ctx)
 }
 
 static void
-brw_set_perf_query_config(struct gl_context *ctx,
-                          GLuint configId)
+brw_set_perf_query_config_id(struct gl_context *ctx,
+                             GLuint configId)
 {
    struct brw_context *brw = brw_context(ctx);
 
@@ -2560,5 +2560,5 @@ brw_init_performance_queries(struct brw_context *brw)
    ctx->Driver.WaitPerfQuery = brw_wait_perf_query;
    ctx->Driver.IsPerfQueryReady = brw_is_perf_query_ready;
    ctx->Driver.GetPerfQueryData = brw_get_perf_query_data;
-   ctx->Driver.SetPerfQueryConfig = brw_set_perf_query_config;
+   ctx->Driver.SetPerfQueryConfigId = brw_set_perf_query_config_id;
 }
