@@ -31,6 +31,15 @@ endif
 if with_dri_i965
   subdir('i965')
 endif
+if with_dri_r100
+  subdir('radeon')
+endif
+if with_dri_r200
+  subdir('r200')
+endif
+if with_dri_nouveau
+  subdir('nouveau')
+endif
 
 if dri_drivers != []
   libmesa_dri_drivers = shared_library(
@@ -41,7 +50,7 @@ if dri_drivers != []
                  libmesa_util, libnir, libmesa_classic],
     dependencies : [dep_selinux, dep_libdrm, dep_expat, dep_m, dep_thread,
                     dep_dl],
-    link_args : [ld_args_bsymbolic, ld_args_gc_sections],
+    link_args : ['-Wl,--build-id=sha1', ld_args_bsymbolic, ld_args_gc_sections],
   )
 
   pkg.generate(

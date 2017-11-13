@@ -24,10 +24,6 @@
  * next paragraph) shall be included in all copies or substantial portions
  * of the Software.
  */
-/*
- * Authors:
- *      Marek Olšák <maraeo@gmail.com>
- */
 
 #ifndef AMDGPU_WINSYS_H
 #define AMDGPU_WINSYS_H
@@ -81,6 +77,7 @@ struct amdgpu_winsys {
 
    bool check_vm;
    bool debug_all_bos;
+   bool reserve_vmid;
 
    /* List of all allocated buffers */
    mtx_t global_bo_list_lock;

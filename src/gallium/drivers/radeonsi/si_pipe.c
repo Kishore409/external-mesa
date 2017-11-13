@@ -589,6 +589,7 @@ static int si_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 	case PIPE_CAP_POLYGON_MODE_FILL_RECTANGLE:
 	case PIPE_CAP_POST_DEPTH_COVERAGE:
 	case PIPE_CAP_TILE_RASTER_ORDER:
+	case PIPE_CAP_MAX_COMBINED_SHADER_OUTPUT_RESOURCES:
 		return 0;
 
 	case PIPE_CAP_NATIVE_FENCE_FD:
@@ -1072,8 +1073,8 @@ struct pipe_screen *radeonsi_screen_create(struct radeon_winsys *ws,
 		driQueryOptionb(config->options, "radeonsi_assume_no_z_fights");
 	sscreen->commutative_blend_add =
 		driQueryOptionb(config->options, "radeonsi_commutative_blend_add");
-	sscreen->clear_db_meta_before_clear =
-		driQueryOptionb(config->options, "radeonsi_clear_db_meta_before_clear");
+	sscreen->clear_db_cache_before_clear =
+		driQueryOptionb(config->options, "radeonsi_clear_db_cache_before_clear");
 	sscreen->has_msaa_sample_loc_bug = (sscreen->b.family >= CHIP_POLARIS10 &&
 					    sscreen->b.family <= CHIP_POLARIS12) ||
 					   sscreen->b.family == CHIP_VEGA10 ||

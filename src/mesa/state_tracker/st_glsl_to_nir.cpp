@@ -320,7 +320,8 @@ sort_varyings(struct exec_list *var_list)
  * variant lowering.
  */
 void
-st_finalize_nir(struct st_context *st, struct gl_program *prog, nir_shader *nir)
+st_finalize_nir(struct st_context *st, struct gl_program *prog,
+                struct gl_shader_program *shader_program, nir_shader *nir)
 {
    struct pipe_screen *screen = st->pipe->screen;
 
@@ -352,22 +353,6 @@ st_finalize_nir(struct st_context *st, struct gl_program *prog, nir_shader *nir)
        /* TODO? */
    } else {
       unreachable("invalid shader type for tgsi bypass\n");
-   }
-
-   struct gl_shader_program *shader_program;
-   switch (nir->info.stage) {
-   case MESA_SHADER_VERTEX:
-      shader_program = ((struct st_vertex_program *)prog)->shader_program;
-      break;
-   case MESA_SHADER_FRAGMENT:
-      shader_program = ((struct st_fragment_program *)prog)->shader_program;
-      break;
-   case MESA_SHADER_COMPUTE:
-      shader_program = ((struct st_compute_program *)prog)->shader_program;
-      break;
-   default:
-      assert(!"should not be reached");
-      return;
    }
 
    NIR_PASS_V(nir, nir_lower_atomics_to_ssbo,
@@ -451,6 +436,7 @@ st_nir_get_mesa_program(struct gl_context *ctx,
    _mesa_associate_uniform_storage(ctx, shader_program, prog, true);
 
    struct st_vertex_program *stvp;
+   struct st_common_program *stp;
    struct st_fragment_program *stfp;
    struct st_compute_program *stcp;
 
@@ -458,6 +444,12 @@ st_nir_get_mesa_program(struct gl_context *ctx,
    case MESA_SHADER_VERTEX:
       stvp = (struct st_vertex_program *)prog;
       stvp->shader_program = shader_program;
+      break;
+   case MESA_SHADER_GEOMETRY:
+   case MESA_SHADER_TESS_CTRL:
+   case MESA_SHADER_TESS_EVAL:
+      stp = (struct st_common_program *)prog;
+      stp->shader_program = shader_program;
       break;
    case MESA_SHADER_FRAGMENT:
       stfp = (struct st_fragment_program *)prog;

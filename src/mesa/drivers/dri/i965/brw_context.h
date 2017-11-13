@@ -615,6 +615,11 @@ enum brw_query_kind {
    PIPELINE_STATS
 };
 
+struct brw_perf_query_register_prog {
+   uint32_t reg;
+   uint32_t val;
+};
+
 struct brw_perf_query_info
 {
    enum brw_query_kind kind;
@@ -634,6 +639,16 @@ struct brw_perf_query_info
    int a_offset;
    int b_offset;
    int c_offset;
+
+   /* Register programming for a given query */
+   struct brw_perf_query_register_prog *flex_regs;
+   uint32_t n_flex_regs;
+
+   struct brw_perf_query_register_prog *mux_regs;
+   uint32_t n_mux_regs;
+
+   struct brw_perf_query_register_prog *b_counter_regs;
+   uint32_t n_b_counter_regs;
 };
 
 /**
@@ -1087,6 +1102,7 @@ struct brw_context
          uint64_t subslice_mask;       /** $SubsliceMask */
          uint64_t gt_min_freq;         /** $GpuMinFrequency */
          uint64_t gt_max_freq;         /** $GpuMaxFrequency */
+         uint64_t revision;            /** $SkuRevisionId */
       } sys_vars;
 
       /* OA metric sets, indexed by GUID, as know by Mesa at build time,
@@ -1236,7 +1252,7 @@ void intel_update_renderbuffers(__DRIcontext *context,
                                 __DRIdrawable *drawable);
 void intel_prepare_render(struct brw_context *brw);
 
-void brw_predraw_resolve_inputs(struct brw_context *brw);
+void brw_predraw_resolve_inputs(struct brw_context *brw, bool rendering);
 
 void intel_resolve_for_dri2_flush(struct brw_context *brw,
                                   __DRIdrawable *drawable);
@@ -1347,8 +1363,7 @@ void brw_get_scratch_bo(struct brw_context *brw,
 			struct brw_bo **scratch_bo, int size);
 void brw_alloc_stage_scratch(struct brw_context *brw,
                              struct brw_stage_state *stage_state,
-                             unsigned per_thread_size,
-                             unsigned thread_count);
+                             unsigned per_thread_size);
 void brw_init_shader_time(struct brw_context *brw);
 int brw_get_shader_time_index(struct brw_context *brw,
                               struct gl_program *prog,

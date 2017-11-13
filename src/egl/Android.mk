@@ -70,6 +70,10 @@ ifeq ($(strip $(BOARD_USES_GRALLOC1)),true)
 LOCAL_CFLAGS += -DHAVE_GRALLOC1
 endif
 
+ifeq ($(filter $(MESA_ANDROID_MAJOR_VERSION), 4 5 6 7),)
+LOCAL_SHARED_LIBRARIES += libnativewindow
+endif
+
 # This controls enabling building of driver libraries
 ifneq ($(HAVE_I915_DRI),)
 LOCAL_REQUIRED_MODULES += i915_dri

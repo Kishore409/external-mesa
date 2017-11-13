@@ -19,11 +19,6 @@
  * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
- *
- * Authors:
- *	Tom Stellard <thomas.stellard@amd.com>
- *	Michel Dänzer <michel.daenzer@amd.com>
- *      Christian König <christian.koenig@amd.com>
  */
 
 /* The compiler middle-end architecture: Explaining (non-)monolithic shaders
@@ -344,6 +339,7 @@ struct si_shader_selector {
 	/* PIPE_SHADER_[VERTEX|FRAGMENT|...] */
 	unsigned	type;
 	bool		vs_needs_prolog;
+	bool		force_correct_derivs_after_kill;
 	unsigned	pa_cl_vs_out_cntl;
 	ubyte		clipdist_mask;
 	ubyte		culldist_mask;

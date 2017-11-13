@@ -24,6 +24,7 @@ libwayland_egl = shared_library(
   'wayland-egl.c',
   c_args : [c_vis_args],
   link_args : ld_args_gc_sections,
+  dependencies : dep_wayland_client,
   version : '1.0.0',
   install : true,
 )
@@ -37,6 +38,9 @@ pkg.generate(
 )
 
 if with_tests
-  test('wayland-egl-symbols-check', find_program('wayland-egl-symbols-check'))
+  test('wayland-egl-symbols-check',
+    find_program('wayland-egl-symbols-check'),
+    args : libwayland_egl
+  )
   test('wayland-egl-abi-check', executable('wayland-egl-abi-check', 'wayland-egl-abi-check.c'))
 endif

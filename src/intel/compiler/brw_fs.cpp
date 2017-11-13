@@ -2092,10 +2092,17 @@ fs_visitor::assign_constant_locations()
     */
    uint32_t *param = stage_prog_data->param;
    stage_prog_data->nr_params = num_push_constants;
-   stage_prog_data->param = ralloc_array(NULL, uint32_t, num_push_constants);
+   if (num_push_constants) {
+      stage_prog_data->param = ralloc_array(mem_ctx, uint32_t,
+                                            num_push_constants);
+   } else {
+      stage_prog_data->param = NULL;
+   }
+   assert(stage_prog_data->nr_pull_params == 0);
+   assert(stage_prog_data->pull_param == NULL);
    if (num_pull_constants > 0) {
       stage_prog_data->nr_pull_params = num_pull_constants;
-      stage_prog_data->pull_param = ralloc_array(NULL, uint32_t,
+      stage_prog_data->pull_param = ralloc_array(mem_ctx, uint32_t,
                                                  num_pull_constants);
    }
 
@@ -5013,7 +5020,9 @@ needs_src_copy(const fs_builder &lbld, const fs_inst *inst, unsigned i)
 {
    return !(is_periodic(inst->src[i], lbld.dispatch_width()) ||
             (inst->components_read(i) == 1 &&
-             lbld.dispatch_width() <= inst->exec_size));
+             lbld.dispatch_width() <= inst->exec_size)) ||
+          (inst->flags_written() &
+           flag_mask(inst->src[i], type_sz(inst->src[i].type)));
 }
 
 /**
@@ -6172,23 +6181,12 @@ fs_visitor::run_gs()
  *   WA: Enable a non-header phase (e.g. push constant) when dispatch would
  *       have been header only.
  *
- * Additionally from the SKL PRM, Volume 2a, Command Reference,
- * 3DSTATE_PS and Push Constant Enable:
- *
- *   This field must be enabled if the sum of the PS Constant Buffer [3:0]
- *   Read Length fields in 3DSTATE_CONSTANT_PS is nonzero, and must be
- *   disabled if the sum is zero.
- *
- * Therefore one needs to prepare register space for minimum amount of
- * constants to be uploaded.
- *
- * Here it is assumed that assign_curb_setup() has determined the total amount
- * of constants (uniforms + ubos) and therefore it is safe to examine if the
- * workaround is needed.
+ * Instead of enabling push constants one can alternatively enable one of the
+ * inputs. Here one simply chooses "layer" which shouldn't impose much
+ * overhead.
  */
 static void
-gen9_ps_header_only_workaround(struct brw_wm_prog_data *wm_prog_data,
-                               int *first_non_payload_grf)
+gen9_ps_header_only_workaround(struct brw_wm_prog_data *wm_prog_data)
 {
    if (wm_prog_data->num_varying_inputs)
       return;
@@ -6196,14 +6194,8 @@ gen9_ps_header_only_workaround(struct brw_wm_prog_data *wm_prog_data,
    if (wm_prog_data->base.curb_read_length)
       return;
 
-   assert(wm_prog_data->base.nr_params == 0);
-
-   wm_prog_data->needs_gen9_ps_header_only_workaround = true;
-
-   const unsigned wa_upload_size = DIV_ROUND_UP(1, 8);
-
-   wm_prog_data->base.curb_read_length = wa_upload_size;
-   *first_non_payload_grf += wa_upload_size;
+   wm_prog_data->urb_setup[VARYING_SLOT_LAYER] = 0;
+   wm_prog_data->num_varying_inputs = 1;
 }
 
 bool
@@ -6271,7 +6263,7 @@ fs_visitor::run_fs(bool allow_spilling, bool do_rep_send)
       assign_curb_setup();
 
       if (devinfo->gen >= 9)
-         gen9_ps_header_only_workaround(wm_prog_data, &first_non_payload_grf);
+         gen9_ps_header_only_workaround(wm_prog_data);
 
       assign_urb_setup();
 
@@ -6557,7 +6549,6 @@ brw_compile_fs(const struct brw_compiler *compiler, void *log_data,
                int shader_time_index8, int shader_time_index16,
                bool allow_spilling,
                bool use_rep_send, struct brw_vue_map *vue_map,
-               unsigned *final_assembly_size,
                char **error_str)
 {
    const struct gen_device_info *devinfo = compiler->devinfo;
@@ -6706,7 +6697,7 @@ brw_compile_fs(const struct brw_compiler *compiler, void *log_data,
       prog_data->reg_blocks_0 = brw_register_blocks(simd16_grf_used);
    }
 
-   return g.get_assembly(final_assembly_size);
+   return g.get_assembly(&prog_data->base.program_size);
 }
 
 fs_reg *
@@ -6793,7 +6784,6 @@ brw_compile_cs(const struct brw_compiler *compiler, void *log_data,
                struct brw_cs_prog_data *prog_data,
                const nir_shader *src_shader,
                int shader_time_index,
-               unsigned *final_assembly_size,
                char **error_str)
 {
    nir_shader *shader = nir_shader_clone(mem_ctx, src_shader);
@@ -6905,7 +6895,7 @@ brw_compile_cs(const struct brw_compiler *compiler, void *log_data,
 
    g.generate_code(cfg, prog_data->simd_size);
 
-   return g.get_assembly(final_assembly_size);
+   return g.get_assembly(&prog_data->base.program_size);
 }
 
 /**

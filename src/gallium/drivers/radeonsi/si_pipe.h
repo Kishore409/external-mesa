@@ -19,9 +19,6 @@
  * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
- *
- * Authors:
- *      Jerome Glisse
  */
 #ifndef SI_PIPE_H
 #define SI_PIPE_H
@@ -98,7 +95,7 @@ struct si_screen {
 	bool				has_out_of_order_rast;
 	bool				assume_no_z_fights;
 	bool				commutative_blend_add;
-	bool				clear_db_meta_before_clear;
+	bool				clear_db_cache_before_clear;
 	bool				has_msaa_sample_loc_bug;
 	bool				dpbb_allowed;
 	bool				dfsm_allowed;

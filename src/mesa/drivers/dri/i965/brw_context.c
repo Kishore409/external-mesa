@@ -816,6 +816,10 @@ brw_process_driconf_options(struct brw_context *brw)
 
    brw->dual_color_blend_by_location =
       driQueryOptionb(options, "dual_color_blend_by_location");
+
+   ctx->Const.dri_config_options_sha1 = ralloc_array(brw, unsigned char, 20);
+   driComputeOptionsSha1(&brw->screen->optionCache,
+                         ctx->Const.dri_config_options_sha1);
 }
 
 GLboolean
@@ -1033,6 +1037,8 @@ brwCreateContext(gl_api api,
    vbo_use_buffer_objects(ctx);
    vbo_always_unmap_buffers(ctx);
 
+   brw_disk_cache_init(brw);
+
    return true;
 }
 
@@ -1061,16 +1067,18 @@ intelDestroyContext(__DRIcontext * driContextPriv)
    brw_draw_destroy(brw);
 
    brw_bo_unreference(brw->curbe.curbe_bo);
-   if (brw->vs.base.scratch_bo)
-      brw_bo_unreference(brw->vs.base.scratch_bo);
-   if (brw->tcs.base.scratch_bo)
-      brw_bo_unreference(brw->tcs.base.scratch_bo);
-   if (brw->tes.base.scratch_bo)
-      brw_bo_unreference(brw->tes.base.scratch_bo);
-   if (brw->gs.base.scratch_bo)
-      brw_bo_unreference(brw->gs.base.scratch_bo);
-   if (brw->wm.base.scratch_bo)
-      brw_bo_unreference(brw->wm.base.scratch_bo);
+
+   brw_bo_unreference(brw->vs.base.scratch_bo);
+   brw_bo_unreference(brw->tcs.base.scratch_bo);
+   brw_bo_unreference(brw->tes.base.scratch_bo);
+   brw_bo_unreference(brw->gs.base.scratch_bo);
+   brw_bo_unreference(brw->wm.base.scratch_bo);
+
+   brw_bo_unreference(brw->vs.base.push_const_bo);
+   brw_bo_unreference(brw->tcs.base.push_const_bo);
+   brw_bo_unreference(brw->tes.base.push_const_bo);
+   brw_bo_unreference(brw->gs.base.push_const_bo);
+   brw_bo_unreference(brw->wm.base.push_const_bo);
 
    brw_destroy_hw_context(brw->bufmgr, brw->hw_ctx);
 

@@ -562,7 +562,8 @@ st_create_vp_variant(struct st_context *st,
          vpv->num_inputs++;
       }
 
-      st_finalize_nir(st, &stvp->Base, vpv->tgsi.ir.nir);
+      st_finalize_nir(st, &stvp->Base, stvp->shader_program,
+                      vpv->tgsi.ir.nir);
 
       vpv->driver_shader = pipe->create_vs_state(pipe, &vpv->tgsi);
       /* driver takes ownership of IR: */
@@ -1088,7 +1089,7 @@ st_create_fp_variant(struct st_context *st,
          NIR_PASS_V(tgsi.ir.nir, nir_lower_tex, &options);
       }
 
-      st_finalize_nir(st, &stfp->Base, tgsi.ir.nir);
+      st_finalize_nir(st, &stfp->Base, stfp->shader_program, tgsi.ir.nir);
 
       if (unlikely(key->external.lower_nv12 || key->external.lower_iyuv)) {
          /* This pass needs to happen *after* nir_lower_sampler */
@@ -1576,6 +1577,16 @@ st_translate_geometry_program(struct st_context *st,
 {
    struct ureg_program *ureg;
 
+   if (stgp->shader_program) {
+      nir_shader *nir = st_glsl_to_nir(st, &stgp->Base, stgp->shader_program,
+                                       MESA_SHADER_GEOMETRY);
+
+      stgp->tgsi.type = PIPE_SHADER_IR_NIR;
+      stgp->tgsi.ir.nir = nir;
+
+      return true;
+   }
+
    ureg = ureg_create_with_screen(PIPE_SHADER_GEOMETRY, st->pipe->screen);
    if (ureg == NULL)
       return false;
@@ -1604,18 +1615,17 @@ st_translate_geometry_program(struct st_context *st,
 struct st_basic_variant *
 st_get_basic_variant(struct st_context *st,
                      unsigned pipe_shader,
-                     struct pipe_shader_state *tgsi,
-                     struct st_basic_variant **variants)
+                     struct st_common_program *prog)
 {
    struct pipe_context *pipe = st->pipe;
    struct st_basic_variant *v;
    struct st_basic_variant_key key;
-
+   struct pipe_shader_state tgsi = {0};
    memset(&key, 0, sizeof(key));
    key.st = st->has_shareable_shaders ? NULL : st;
 
    /* Search for existing variant */
-   for (v = *variants; v; v = v->next) {
+   for (v = prog->variants; v; v = v->next) {
       if (memcmp(&v->key, &key, sizeof(key)) == 0) {
          break;
       }
@@ -1625,16 +1635,24 @@ st_get_basic_variant(struct st_context *st,
       /* create new */
       v = CALLOC_STRUCT(st_basic_variant);
       if (v) {
+
+	 if (prog->tgsi.type == PIPE_SHADER_IR_NIR) {
+	    tgsi.type = PIPE_SHADER_IR_NIR;
+	    tgsi.ir.nir = nir_shader_clone(NULL, prog->tgsi.ir.nir);
+	    st_finalize_nir(st, &prog->Base, prog->shader_program,
+                            tgsi.ir.nir);
+	 } else
+	    tgsi = prog->tgsi;
          /* fill in new variant */
          switch (pipe_shader) {
          case PIPE_SHADER_TESS_CTRL:
-            v->driver_shader = pipe->create_tcs_state(pipe, tgsi);
+            v->driver_shader = pipe->create_tcs_state(pipe, &tgsi);
             break;
          case PIPE_SHADER_TESS_EVAL:
-            v->driver_shader = pipe->create_tes_state(pipe, tgsi);
+            v->driver_shader = pipe->create_tes_state(pipe, &tgsi);
             break;
          case PIPE_SHADER_GEOMETRY:
-            v->driver_shader = pipe->create_gs_state(pipe, tgsi);
+            v->driver_shader = pipe->create_gs_state(pipe, &tgsi);
             break;
          default:
             assert(!"unhandled shader type");
@@ -1645,8 +1663,8 @@ st_get_basic_variant(struct st_context *st,
          v->key = key;
 
          /* insert into list */
-         v->next = *variants;
-         *variants = v;
+         v->next = prog->variants;
+         prog->variants = v;
       }
    }
 
@@ -1662,6 +1680,16 @@ st_translate_tessctrl_program(struct st_context *st,
                               struct st_common_program *sttcp)
 {
    struct ureg_program *ureg;
+
+   if (sttcp->shader_program) {
+      nir_shader *nir = st_glsl_to_nir(st, &sttcp->Base, sttcp->shader_program,
+                                       MESA_SHADER_TESS_EVAL);
+
+      sttcp->tgsi.type = PIPE_SHADER_IR_NIR;
+      sttcp->tgsi.ir.nir = nir;
+
+      return true;
+   }
 
    ureg = ureg_create_with_screen(PIPE_SHADER_TESS_CTRL, st->pipe->screen);
    if (ureg == NULL)
@@ -1687,6 +1715,16 @@ st_translate_tesseval_program(struct st_context *st,
                               struct st_common_program *sttep)
 {
    struct ureg_program *ureg;
+
+   if (sttep->shader_program) {
+      nir_shader *nir = st_glsl_to_nir(st, &sttep->Base, sttep->shader_program,
+                                       MESA_SHADER_TESS_EVAL);
+
+      sttep->tgsi.type = PIPE_SHADER_IR_NIR;
+      sttep->tgsi.ir.nir = nir;
+
+      return true;
+   }
 
    ureg = ureg_create_with_screen(PIPE_SHADER_TESS_EVAL, st->pipe->screen);
    if (ureg == NULL)
@@ -1736,7 +1774,7 @@ st_translate_compute_program(struct st_context *st,
                                        MESA_SHADER_COMPUTE);
 
       /* no compute variants: */
-      st_finalize_nir(st, &stcp->Base, nir);
+      st_finalize_nir(st, &stcp->Base, stcp->shader_program, nir);
 
       stcp->tgsi.ir_type = PIPE_SHADER_IR_NIR;
       stcp->tgsi.prog = nir;
@@ -2004,19 +2042,19 @@ st_precompile_shader_variant(struct st_context *st,
 
    case GL_TESS_CONTROL_PROGRAM_NV: {
       struct st_common_program *p = st_common_program(prog);
-      st_get_basic_variant(st, PIPE_SHADER_TESS_CTRL, &p->tgsi, &p->variants);
+      st_get_basic_variant(st, PIPE_SHADER_TESS_CTRL, p);
       break;
    }
 
    case GL_TESS_EVALUATION_PROGRAM_NV: {
       struct st_common_program *p = st_common_program(prog);
-      st_get_basic_variant(st, PIPE_SHADER_TESS_EVAL, &p->tgsi, &p->variants);
+      st_get_basic_variant(st, PIPE_SHADER_TESS_EVAL, p);
       break;
    }
 
    case GL_GEOMETRY_PROGRAM_NV: {
       struct st_common_program *p = st_common_program(prog);
-      st_get_basic_variant(st, PIPE_SHADER_GEOMETRY, &p->tgsi, &p->variants);
+      st_get_basic_variant(st, PIPE_SHADER_GEOMETRY, p);
       break;
    }
 

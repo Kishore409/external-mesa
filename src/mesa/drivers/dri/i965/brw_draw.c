@@ -25,6 +25,7 @@
 
 #include <sys/errno.h>
 
+#include "main/blend.h"
 #include "main/context.h"
 #include "main/condrender.h"
 #include "main/samplerobj.h"
@@ -381,7 +382,7 @@ intel_disable_rb_aux_buffer(struct brw_context *brw,
  * enabled depth texture, and flush the render cache for any dirty textures.
  */
 void
-brw_predraw_resolve_inputs(struct brw_context *brw)
+brw_predraw_resolve_inputs(struct brw_context *brw, bool rendering)
 {
    struct gl_context *ctx = &brw->ctx;
    struct intel_texture_object *tex_obj;
@@ -416,7 +417,7 @@ brw_predraw_resolve_inputs(struct brw_context *brw)
          num_layers = INTEL_REMAINING_LAYERS;
       }
 
-      const bool disable_aux =
+      const bool disable_aux = rendering &&
          intel_disable_rb_aux_buffer(brw, tex_obj->mt, min_level, num_levels,
                                      "for sampling");
 
@@ -503,9 +504,13 @@ brw_predraw_resolve_framebuffer(struct brw_context *brw)
       if (irb == NULL || irb->mt == NULL)
          continue;
 
+      mesa_format mesa_format =
+         _mesa_get_render_format(ctx, intel_rb_format(irb));
+      enum isl_format isl_format = brw_isl_format_for_mesa_format(mesa_format);
+
       intel_miptree_prepare_render(brw, irb->mt, irb->mt_level,
                                    irb->mt_layer, irb->layer_count,
-                                   ctx->Color.sRGBEnabled,
+                                   isl_format,
                                    ctx->Color.BlendEnabled & (1 << i));
    }
 }
@@ -571,10 +576,14 @@ brw_postdraw_set_buffers_need_resolve(struct brw_context *brw)
       if (!irb)
          continue;
 
+      mesa_format mesa_format =
+         _mesa_get_render_format(ctx, intel_rb_format(irb));
+      enum isl_format isl_format = brw_isl_format_for_mesa_format(mesa_format);
+
       brw_render_cache_set_add_bo(brw, irb->mt->bo);
       intel_miptree_finish_render(brw, irb->mt, irb->mt_level,
                                   irb->mt_layer, irb->layer_count,
-                                  ctx->Color.sRGBEnabled,
+                                  isl_format,
                                   ctx->Color.BlendEnabled & (1 << i));
    }
 }
@@ -678,7 +687,7 @@ brw_prepare_drawing(struct gl_context *ctx,
     * and finalizing textures but before setting up any hardware state for
     * this draw call.
     */
-   brw_predraw_resolve_inputs(brw);
+   brw_predraw_resolve_inputs(brw, true);
    brw_predraw_resolve_framebuffer(brw);
 
    /* Bind all inputs, derive varying and size information:
@@ -866,7 +875,6 @@ brw_draw_prims(struct gl_context *ctx,
    struct brw_context *brw = brw_context(ctx);
    const struct gl_vertex_array **arrays = ctx->Array._DrawArrays;
    int predicate_state = brw->predicate.state;
-   int combine_op = MI_PREDICATE_COMBINEOP_SET;
    struct brw_transform_feedback_object *xfb_obj =
       (struct brw_transform_feedback_object *) gl_xfb_obj;
 
@@ -910,49 +918,35 @@ brw_draw_prims(struct gl_context *ctx,
     * to it.
     */
 
-    if (brw->draw.draw_params_count_bo &&
-        predicate_state == BRW_PREDICATE_STATE_USE_BIT) {
-      /* We need to empty the MI_PREDICATE_DATA register since it might
-       * already be set.
-       */
-
-      BEGIN_BATCH(4);
-      OUT_BATCH(MI_PREDICATE_DATA);
-      OUT_BATCH(0u);
-      OUT_BATCH(MI_PREDICATE_DATA + 4);
-      OUT_BATCH(0u);
-      ADVANCE_BATCH();
-
-      /* We need to combine the results of both predicates.*/
-      combine_op = MI_PREDICATE_COMBINEOP_AND;
-   }
-
    for (i = 0; i < nr_prims; i++) {
       /* Implementation of ARB_indirect_parameters via predicates */
       if (brw->draw.draw_params_count_bo) {
-         struct brw_bo *draw_id_bo = NULL;
-         uint32_t draw_id_offset;
-
-         intel_upload_data(brw, &prims[i].draw_id, 4, 4, &draw_id_bo,
-                           &draw_id_offset);
-
          brw_emit_pipe_control_flush(brw, PIPE_CONTROL_FLUSH_ENABLE);
 
+         /* Upload the current draw count from the draw parameters buffer to
+          * MI_PREDICATE_SRC0.
+          */
          brw_load_register_mem(brw, MI_PREDICATE_SRC0,
                                brw->draw.draw_params_count_bo,
                                brw->draw.draw_params_count_offset);
-         brw_load_register_mem(brw, MI_PREDICATE_SRC1, draw_id_bo,
-                               draw_id_offset);
+         /* Zero the top 32-bits of MI_PREDICATE_SRC0 */
+         brw_load_register_imm32(brw, MI_PREDICATE_SRC0 + 4, 0);
+         /* Upload the id of the current primitive to MI_PREDICATE_SRC1. */
+         brw_load_register_imm64(brw, MI_PREDICATE_SRC1, prims[i].draw_id);
 
          BEGIN_BATCH(1);
-         OUT_BATCH(GEN7_MI_PREDICATE |
-                   MI_PREDICATE_LOADOP_LOADINV | combine_op |
-                   MI_PREDICATE_COMPAREOP_DELTAS_EQUAL);
+         if (i == 0 && brw->predicate.state != BRW_PREDICATE_STATE_USE_BIT) {
+            OUT_BATCH(GEN7_MI_PREDICATE | MI_PREDICATE_LOADOP_LOADINV |
+                      MI_PREDICATE_COMBINEOP_SET |
+                      MI_PREDICATE_COMPAREOP_SRCS_EQUAL);
+         } else {
+            OUT_BATCH(GEN7_MI_PREDICATE |
+                      MI_PREDICATE_LOADOP_LOAD | MI_PREDICATE_COMBINEOP_XOR |
+                      MI_PREDICATE_COMPAREOP_SRCS_EQUAL);
+         }
          ADVANCE_BATCH();
 
          brw->predicate.state = BRW_PREDICATE_STATE_USE_BIT;
-
-         brw_bo_unreference(draw_id_bo);
       }
 
       brw_draw_single_prim(ctx, arrays, &prims[i], i, xfb_obj, stream,

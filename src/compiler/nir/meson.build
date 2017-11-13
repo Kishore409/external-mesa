@@ -164,6 +164,8 @@ files_libnir = files(
   'nir_search.c',
   'nir_search.h',
   'nir_search_helpers.h',
+  'nir_serialize.c',
+  'nir_serialize.h',
   'nir_split_var_copies.c',
   'nir_sweep.c',
   'nir_to_lcssa.c',
@@ -192,6 +194,8 @@ libnir = static_library(
   link_with : libcompiler,
   build_by_default : false,
 )
+
+nir_algebraic_py = files('nir_algebraic.py')
 
 if with_tests
   nir_control_flow_test = executable(

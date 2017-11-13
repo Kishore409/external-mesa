@@ -21,7 +21,9 @@
 c_args_for_egl = []
 link_for_egl = []
 deps_for_egl = []
-incs_for_egl = []
+incs_for_egl = [
+  inc_include, inc_src, inc_loader, inc_gbm, include_directories('main'),
+]
 files_egl = files(
   'main/eglapi.c',
   'main/eglapi.h',
@@ -127,7 +129,10 @@ if with_platform_wayland
     'wayland/wayland-egl', 'wayland/wayland-drm',
   )
 endif
-# TODO: android
+if with_platform_android
+  deps_for_egl += dep_android
+  files_egl += files('drivers/dri2/platform_android.c')
+endif
 
 # TODO: glvnd
 
@@ -159,10 +164,7 @@ libegl = shared_library(
     '-D_EGL_BUILT_IN_DRIVER_DRI2',
     '-D_EGL_NATIVE_PLATFORM=_EGL_PLATFORM_@0@'.format(egl_native_platform.to_upper()),
   ],
-  include_directories : [
-    incs_for_egl, inc_include, inc_src, inc_loader, inc_gbm,
-    include_directories('main'),
-  ],
+  include_directories : incs_for_egl,
   link_with : [link_for_egl, libloader, libxmlconfig, libglapi, libmesa_util],
   link_args : [ld_args_bsymbolic, ld_args_gc_sections],
   dependencies : [deps_for_egl, dep_dl, dep_libdrm, dep_clock, dep_thread],
@@ -181,6 +183,16 @@ pkg.generate(
 )
 
 if with_tests
-  test('egl-symbols-check', find_program('egl-symbols-check'))
-  test('egl-entrypoint-check', find_program('egl-entrypoint-check'))
+  if with_glvnd
+    # TODO: add glvnd symbol check
+  else
+    test('egl-symbols-check',
+      find_program('egl-symbols-check'),
+      args : libegl
+    )
+  endif
+  test('egl-entrypoint-check',
+    find_program('egl-entrypoint-check'),
+    env : [ 'srcdir=' + meson.current_source_dir() ]
+  )
 endif

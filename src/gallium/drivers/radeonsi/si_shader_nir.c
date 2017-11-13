@@ -59,6 +59,11 @@ static void scan_instruction(struct tgsi_shader_info *info,
 	} else if (instr->type == nir_instr_type_tex) {
 		nir_tex_instr *tex = nir_instr_as_tex(instr);
 
+		if (!tex->texture) {
+			info->samplers_declared |=
+				u_bit_consecutive(tex->sampler_index, 1);
+		}
+
 		switch (tex->op) {
 		case nir_texop_tex:
 		case nir_texop_txb:
@@ -302,8 +307,7 @@ void si_nir_scan_shader(const struct nir_shader *nir,
 	info->num_written_clipdistance = nir->info.clip_distance_array_size;
 	info->num_written_culldistance = nir->info.cull_distance_array_size;
 	info->clipdist_writemask = u_bit_consecutive(0, info->num_written_clipdistance);
-	info->culldist_writemask = u_bit_consecutive(info->num_written_clipdistance,
-						     info->num_written_culldistance);
+	info->culldist_writemask = u_bit_consecutive(0, info->num_written_culldistance);
 
 	if (info->processor == PIPE_SHADER_FRAGMENT)
 		info->uses_kill = nir->info.fs.uses_discard;
@@ -498,6 +502,7 @@ bool si_nir_build_llvm(struct si_shader_context *ctx, struct nir_shader *nir)
 
 	ctx->abi.inputs = &ctx->inputs[0];
 	ctx->abi.load_sampler_desc = si_nir_load_sampler_desc;
+	ctx->abi.clamp_shadow_reference = true;
 
 	ctx->num_samplers = util_last_bit(info->samplers_declared);
 	ctx->num_images = util_last_bit(info->images_declared);

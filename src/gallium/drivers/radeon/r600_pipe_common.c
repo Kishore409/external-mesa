@@ -19,9 +19,6 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
- *
- * Authors: Marek Olšák <maraeo@gmail.com>
- *
  */
 
 #include "r600_pipe_common.h"
@@ -851,6 +848,7 @@ static const struct debug_named_value common_debug_options[] = {
 	{ "dpbb", DBG(DPBB), "Enable DPBB." },
 	{ "dfsm", DBG(DFSM), "Enable DFSM." },
 	{ "nooutoforder", DBG(NO_OUT_OF_ORDER), "Disable out-of-order rasterization" },
+	{ "reserve_vmid", DBG(RESERVE_VMID), "Force VMID reservation per context." },
 
 	DEBUG_NAMED_VALUE_END /* must be last */
 };

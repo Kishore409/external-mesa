@@ -28,6 +28,7 @@
 #include "intel_batchbuffer.h"
 #include "intel_buffer_objects.h"
 #include "program/prog_parameter.h"
+#include "main/shaderapi.h"
 
 static uint32_t
 f_as_u32(float f)
@@ -129,9 +130,16 @@ gen6_upload_push_constants(struct brw_context *brw,
    const struct gen_device_info *devinfo = &brw->screen->devinfo;
    struct gl_context *ctx = &brw->ctx;
 
-   stage_state->push_const_size = 0;
+   bool active = prog_data &&
+      (stage_state->stage != MESA_SHADER_TESS_CTRL ||
+       brw->programs[MESA_SHADER_TESS_EVAL]);
 
-   if (prog_data->nr_params) {
+   if (active)
+      _mesa_shader_write_subroutine_indices(ctx, stage_state->stage);
+
+   if (!active || prog_data->nr_params == 0) {
+      stage_state->push_const_size = 0;
+   } else {
       /* Updates the ParamaterValues[i] pointers for all parameters of the
        * basic type of PROGRAM_STATE_VAR.
        */
@@ -196,17 +204,6 @@ gen6_upload_push_constants(struct brw_context *brw,
        * The other shader stages all match the VS's limits.
        */
       assert(stage_state->push_const_size <= 32);
-   } else if (stage_state->stage == MESA_SHADER_FRAGMENT &&
-              devinfo->gen >= 9) {
-      const struct brw_wm_prog_data *wm_prog_data =
-         (const struct brw_wm_prog_data *)prog_data;
-
-      if (wm_prog_data->needs_gen9_ps_header_only_workaround) {
-         intel_upload_space(brw, 1 * sizeof(gl_constant_value), 32,
-                            &stage_state->push_const_bo,
-                            &stage_state->push_const_offset);
-         stage_state->push_const_size = ALIGN(1, 8) / 8;
-      }
    }
 
    stage_state->push_constants_dirty = true;
