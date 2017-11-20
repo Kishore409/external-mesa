@@ -401,11 +401,6 @@ struct brw_perf_query_object
           * Number of reports accumulated to produce the results.
           */
          uint32_t reports_accumulated;
-
-         /**
-          * MDAPI specific null renderer behavior.
-          */
-         bool null_renderer;
       } oa;
 
       struct {
@@ -472,6 +467,12 @@ dump_perf_query_callback(GLuint id, void *query_void, void *brw_void)
           o->Used ? "Dirty," : "New,",
           o->Active ? "Active," : (o->Ready ? "Ready," : "Pending,"),
           obj->pipeline_stats.bo ? "yes" : "no");
+      break;
+   case NULL_RENDERER:
+      DBG("%4d: %-6s %-8s NULL_RENDERER\n",
+          id,
+          o->Used ? "Dirty," : "New,",
+          o->Active ? "Active," : (o->Ready ? "Ready," : "Pending,"));
       break;
    }
 }
@@ -569,6 +570,9 @@ brw_get_perf_query_info(struct gl_context *ctx,
    case PIPELINE_STATS:
       *n_active = brw->perfquery.n_active_pipeline_stats_queries;
       break;
+
+   case NULL_RENDERER:
+      *n_active = brw->perfquery.n_active_null_renderers;
    }
 }
 
@@ -1354,9 +1358,13 @@ brw_begin_perf_query(struct gl_context *ctx,
           brw->perfquery.current_oa_metrics_set_id !=
           brw_perf_query_get_metric_id(brw, query)) {
 
-         if (brw->perfquery.n_oa_users != 0)
+         if (brw->perfquery.n_oa_users != 0) {
+            DBG("WARNING: Begin(%d) failed already using perf config=%i/%"PRIu64"\n",
+                o->Id,
+                brw->perfquery.current_oa_metrics_set_id,
+                brw_perf_query_get_metric_id(brw, query));
             return false;
-         else
+         } else
             close_perf(brw);
       }
 
@@ -1464,15 +1472,6 @@ brw_begin_perf_query(struct gl_context *ctx,
        */
       intel_batchbuffer_flush(brw);
 
-
-      if (obj->oa.null_renderer) {
-         BEGIN_BATCH(3);
-         OUT_BATCH(MI_LOAD_REGISTER_IMM | (3 - 2));
-         OUT_BATCH(CS_DEBUG_MODE2);
-         OUT_BATCH(REG_MASK(CSDBG2_3D_RENDERER_INSTRUCTION_DISABLE) |
-                   CSDBG2_3D_RENDERER_INSTRUCTION_DISABLE);
-         ADVANCE_BATCH();
-      }
       /* Take a starting OA counter snapshot. */
       brw->vtbl.emit_mi_report_perf_count(brw, obj->oa.bo, 0,
                                           obj->oa.begin_report_id);
@@ -1520,6 +1519,16 @@ brw_begin_perf_query(struct gl_context *ctx,
 
       ++brw->perfquery.n_active_pipeline_stats_queries;
       break;
+
+   case NULL_RENDERER:
+      ++brw->perfquery.n_active_null_renderers;
+      BEGIN_BATCH(3);
+      OUT_BATCH(MI_LOAD_REGISTER_IMM | (3 - 2));
+      OUT_BATCH(CS_DEBUG_MODE2);
+      OUT_BATCH(REG_MASK(CSDBG2_3D_RENDERER_INSTRUCTION_DISABLE) |
+                CSDBG2_3D_RENDERER_INSTRUCTION_DISABLE);
+      ADVANCE_BATCH();
+      break;
    }
 
    if (INTEL_DEBUG & DEBUG_PERFMON)
@@ -1564,14 +1573,6 @@ brw_end_perf_query(struct gl_context *ctx,
                                              obj->oa.begin_report_id + 1);
       }
 
-      if (obj->oa.null_renderer) {
-         BEGIN_BATCH(3);
-         OUT_BATCH(MI_LOAD_REGISTER_IMM | (3 - 2));
-         OUT_BATCH(CS_DEBUG_MODE2);
-         OUT_BATCH(REG_MASK(CSDBG2_3D_RENDERER_INSTRUCTION_DISABLE));
-         ADVANCE_BATCH();
-      }
-
       --brw->perfquery.n_active_oa_queries;
 
       /* NB: even though the query has now ended, it can't be accumulated
@@ -1584,6 +1585,16 @@ brw_end_perf_query(struct gl_context *ctx,
       snapshot_statistics_registers(brw, obj,
                                     STATS_BO_END_OFFSET_BYTES);
       --brw->perfquery.n_active_pipeline_stats_queries;
+      break;
+
+   case NULL_RENDERER:
+      if (--brw->perfquery.n_active_null_renderers == 0) {
+         BEGIN_BATCH(3);
+         OUT_BATCH(MI_LOAD_REGISTER_IMM | (3 - 2));
+         OUT_BATCH(CS_DEBUG_MODE2);
+         OUT_BATCH(REG_MASK(CSDBG2_3D_RENDERER_INSTRUCTION_DISABLE));
+         ADVANCE_BATCH();
+      }
       break;
    }
 }
@@ -1598,6 +1609,8 @@ brw_wait_perf_query(struct gl_context *ctx, struct gl_perf_query_object *o)
    assert(!o->Ready);
 
    switch (obj->query->kind) {
+   case NULL_RENDERER:
+      break;
    case OA_COUNTERS:
       bo = obj->oa.bo;
       break;
@@ -1650,6 +1663,8 @@ brw_is_perf_query_ready(struct gl_context *ctx,
       return (obj->pipeline_stats.bo &&
               !brw_batch_references(&brw->batch, obj->pipeline_stats.bo) &&
               !brw_bo_busy(obj->pipeline_stats.bo));
+   case NULL_RENDERER:
+      return true;
    }
 
    unreachable("missing ready check for unknown query kind");
@@ -1858,6 +1873,9 @@ brw_get_perf_query_data(struct gl_context *ctx,
    case PIPELINE_STATS:
       written = get_pipeline_stats_data(brw, obj, data_size, (uint8_t *)data);
       break;
+
+   case NULL_RENDERER:
+      break;
    }
 
    if (bytes_written)
@@ -1877,9 +1895,6 @@ brw_new_perf_query_object(struct gl_context *ctx, unsigned query_index)
       return NULL;
 
    obj->query = query;
-   if (!strcmp(query->name, "Intel_Null_Hardware_Query"))
-      obj->oa.null_renderer = true;
-
    brw->perfquery.n_query_instances++;
 
    return &obj->base;
@@ -1924,6 +1939,9 @@ brw_delete_perf_query(struct gl_context *ctx,
          brw_bo_unreference(obj->pipeline_stats.bo);
          obj->pipeline_stats.bo = NULL;
       }
+      break;
+
+   case NULL_RENDERER:
       break;
    }
 
@@ -2137,12 +2155,13 @@ read_file_uint64(const char *file, uint64_t *val)
 static void
 fill_mdapi_perf_query_info(struct brw_context *brw,
                            struct brw_perf_query_info *query,
-                           const char *name)
+                           const char *name,
+                           enum brw_query_kind kind)
 {
    const struct gen_device_info *devinfo = &brw->screen->devinfo;
 
 
-   query->kind = OA_COUNTERS;
+   query->kind = kind;
    query->name = name;
    query->guid = NULL;
    query->counters = NULL;
@@ -2235,9 +2254,9 @@ enumerate_sysfs_metrics(struct brw_context *brw, const char *sysfs_dev_dir)
    /* MDAPI queries */
    {
       struct brw_perf_query_info *query = append_query_info(brw);
-      fill_mdapi_perf_query_info(brw, query, "Intel_Raw_Hardware_Counters_Set_0_Query");
+      fill_mdapi_perf_query_info(brw, query, "Intel_Raw_Hardware_Counters_Set_0_Query", OA_COUNTERS);
       query = append_query_info(brw);
-      fill_mdapi_perf_query_info(brw, query, "Intel_Null_Hardware_Query");
+      fill_mdapi_perf_query_info(brw, query, "Intel_Null_Hardware_Query", NULL_RENDERER);
    }
 
    closedir(metricsdir);
@@ -2544,6 +2563,7 @@ brw_set_perf_query_config_id(struct gl_context *ctx,
 {
    struct brw_context *brw = brw_context(ctx);
 
+   DBG("SetConfigId configId=%i\n", configId);
    brw->perfquery.mdapi_metrics_set_id = configId;
 }
 
