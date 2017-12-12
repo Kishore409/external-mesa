@@ -58,7 +58,11 @@ build_id_find_nhdr_callback(struct dl_phdr_info *info, size_t size, void *data_)
 {
    struct callback_data *data = data_;
 
+#if defined(__LP64__) || defined(_WIN64) || (defined(__x86_64__) && !defined(__ILP32__) ) || defined(_M_X64) || defined(__ia64) || defined (_M_IA64) || defined(__aarch64__) || defined(__powerpc64__)
    if ((void *)info->dlpi_addr != data->dli_fbase)
+#else
+   if ((void *)info->dlpi_addr + 0x8000 != data->dli_fbase)
+#endif
       return 0;
 
    for (unsigned i = 0; i < info->dlpi_phnum; i++) {
